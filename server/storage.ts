@@ -10,9 +10,9 @@ import {
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
 if (!connectionString) {
-  throw new Error("DATABASE_URL is required for database storage");
+  throw new Error("DATABASE_URL or DATABASE_POSTGRES_URL is required for database storage");
 }
 
 const pool = new Pool({ connectionString });
