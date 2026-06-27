@@ -15,7 +15,10 @@ if (!connectionString) {
   throw new Error("DATABASE_URL or DATABASE_POSTGRES_URL is required for database storage");
 }
 
-const pool = new Pool({ connectionString });
+const pool = new Pool({
+  connectionString,
+  ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: false }
+});
 const db = drizzle(pool);
 
 export interface IStorage {
