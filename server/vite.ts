@@ -13,10 +13,12 @@ export function log(message: string, source = "express") {
 
   console.log(`${formattedTime} [${source}] ${message}`);
 }
-
 export async function setupVite(app: Express, server: Server) {
-  const { createServer: createViteServer, createLogger } = await import("vite");
-  const viteConfig = (await import("../vite.config")).default;
+  const viteModule = await import("vite");
+  const createViteServer = viteModule.createServer;
+  const createLogger = viteModule.createLogger;
+  const configPath = "../vite.config";
+  const viteConfig = (await import(configPath)).default;
   const viteLogger = createLogger();
 
   const serverOptions = {
