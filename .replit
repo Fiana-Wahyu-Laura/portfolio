@@ -34,3 +34,9 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=fianawahyulaura@gmail.com          # alamat pengirim
+SMTP_PASS=app_password_atau_token # gunakan App Password jika Gmail
+CONTACT_EMAIL=fianawahyulaura@gmail.com    # email penerima (boleh sama dengan SMTP_USER)

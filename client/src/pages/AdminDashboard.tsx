@@ -1,11 +1,13 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { PageLayout } from "../components/ui/layout";
+import { Alert } from "@/components/ui/alert";
+import { useLocation } from "wouter";
 
 interface Article {
   id: number;
@@ -28,6 +30,7 @@ interface Experience {
   position: string;
   duration: string;
   description: string;
+  image?: string;
 }
 
 interface ThemeSettings {
@@ -53,593 +56,572 @@ interface ProfileSettings {
   resume: string;
 }
 
-export const AdminDashboard = (): JSX.Element => {
-  // Sample data
-  const [articles, setArticles] = useState<Article[]>([
-    { id: 1, title: "Sample Article", content: "This is a sample article content.", date: "2024-01-01" }
-  ]);
-  
-  const [projects, setProjects] = useState<Project[]>([
-    { id: 1, title: "Sample Project", description: "A sample project description", image: "", technologies: ["React", "TypeScript"] }
-  ]);
-  
-  const [experiences, setExperiences] = useState<Experience[]>([
-    { id: 1, company: "Sample Company", position: "UI/UX Designer", duration: "2023-2024", description: "Sample work experience" }
-  ]);
+export default function AdminDashboard() {
+  const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState("articles");
+  const [message, setMessage] = useState({ type: "", text: "" });
 
-  const [themeSettings, setThemeSettings] = useState<ThemeSettings>({
-    primaryColor: "#e56815",
-    secondaryColor: "#222a47",
-    backgroundColor: "#fbebe3"
-  });
+  // States for data
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [experiences, setExperiences] = useState<Experience[]>([]);
 
-  const [profileSettings, setProfileSettings] = useState<ProfileSettings>({
-    profileImage: "/figmaAssets/whatsapp-image-2025-05-03-at-20-20-29.png",
-    name: "Fiana",
-    title: "Product Digital Designer",
-    description: "I'm a Product Digital Designer passionate about crafting user-friendly and impactful digital experiences. With a strong foundation in UI/UX design and an eye for detail, I turn ideas into intuitive products that truly resonate with real users.",
-    email: "fiana@example.com",
-    phone: "+62 123 456 789",
-    location: "Indonesia",
-    socialLinks: {
-      linkedin: "https://linkedin.com/in/fiana",
-      github: "https://github.com/fiana",
-      instagram: "https://instagram.com/fiana"
-    },
-    skills: ["UI Design", "UX Research", "Product Design", "No Code Tools", "Basic HTML/CSS"],
-    resume: ""
-  });
+  // Helper to convert Google Drive URL to direct image URL for both submission and rendering
+  const convertGoogleDriveUrl = (url: string) => {
+    if (!url) return url;
+    if (url.includes('drive.google.com')) {
+      const fileMatch = url.match(/\/file\/d\/([^\/\?]+)/);
+      if (fileMatch && fileMatch[1]) return `https://drive.google.com/thumbnail?id=${fileMatch[1]}&sz=w1000`;
+      
+      const idMatch = url.match(/[\?&]id=([^&]+)/);
+      if (idMatch && idMatch[1]) return `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w1000`;
+    }
+    return url;
+  };
 
-  // Form states
+  // States for forms
   const [articleForm, setArticleForm] = useState({ title: "", content: "" });
   const [projectForm, setProjectForm] = useState({ title: "", description: "", image: "", technologies: "" });
-  const [experienceForm, setExperienceForm] = useState({ company: "", position: "", duration: "", description: "" });
+  const [experienceForm, setExperienceForm] = useState({ company: "", position: "", duration: "", description: "", image: "" });
 
-  // CRUD Functions for Articles
-  const addArticle = () => {
-    if (articleForm.title && articleForm.content) {
-      const newArticle: Article = {
-        id: Date.now(),
-        title: articleForm.title,
-        content: articleForm.content,
-        date: new Date().toISOString().split('T')[0]
-      };
-      setArticles([...articles, newArticle]);
-      setArticleForm({ title: "", content: "" });
+  // States for edit mode
+  const [editingArticleId, setEditingArticleId] = useState<number | null>(null);
+  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [editingExperienceId, setEditingExperienceId] = useState<number | null>(null);
+
+  // Use effect to load data
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("authToken");
+    return {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    };
+  };
+
+  const fetchData = async () => {
+    try {
+      const [artRes, projRes, expRes] = await Promise.all([
+        fetch("/api/articles"),
+        fetch("/api/projects"),
+        fetch("/api/experience")
+      ]);
+      if (artRes.ok) setArticles(await artRes.json());
+      if (projRes.ok) setProjects(await projRes.json());
+      if (expRes.ok) setExperiences(await expRes.json());
+    } catch (error) {
+      console.error("Error fetching data:", error);
     }
   };
 
-  const deleteArticle = (id: number) => {
-    setArticles(articles.filter(article => article.id !== id));
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Show success/error message
+  const showMessage = (type: string, text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage({ type: "", text: "" }), 3000);
+  };
+
+  // CRUD Functions for Articles
+  const handleArticleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!articleForm.title || !articleForm.content) {
+      showMessage("error", "Please fill all required fields");
+      return;
+    }
+
+    try {
+      if (editingArticleId) {
+        const res = await fetch(`/api/articles/${editingArticleId}`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(articleForm)
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        showMessage("success", "Article updated successfully");
+      } else {
+        const newArticle = { ...articleForm, date: new Date().toISOString().split('T')[0] };
+        const res = await fetch("/api/articles", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(newArticle)
+        });
+        if (!res.ok) throw new Error("Failed to add");
+        showMessage("success", "Article added successfully");
+      }
+      setArticleForm({ title: "", content: "" });
+      setEditingArticleId(null);
+      fetchData();
+    } catch (error) {
+      showMessage("error", "An error occurred");
+    }
+  };
+
+  const editArticle = (article: Article) => {
+    setArticleForm({ title: article.title, content: article.content });
+    setEditingArticleId(article.id);
+  };
+
+  const deleteArticle = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this article?")) {
+      try {
+        const res = await fetch(`/api/articles/${id}`, {
+          method: "DELETE",
+          headers: getAuthHeaders()
+        });
+        if (!res.ok) throw new Error("Failed to delete");
+        showMessage("success", "Article deleted successfully");
+        fetchData();
+      } catch (error) {
+        showMessage("error", "An error occurred");
+      }
+    }
   };
 
   // CRUD Functions for Projects
-  const addProject = () => {
-    if (projectForm.title && projectForm.description) {
-      const newProject: Project = {
-        id: Date.now(),
-        title: projectForm.title,
-        description: projectForm.description,
-        image: projectForm.image,
-        technologies: projectForm.technologies.split(',').map(tech => tech.trim())
-      };
-      setProjects([...projects, newProject]);
+  const handleProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectForm.title || !projectForm.description) {
+      showMessage("error", "Please fill all required fields");
+      return;
+    }
+
+
+
+    const projectPayload = {
+      ...projectForm,
+      image: convertGoogleDriveUrl(projectForm.image),
+      technologies: projectForm.technologies.split(',').map(tech => tech.trim())
+    };
+
+    try {
+      if (editingProjectId) {
+        const res = await fetch(`/api/projects/${editingProjectId}`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(projectPayload)
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        showMessage("success", "Project updated successfully");
+      } else {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(projectPayload)
+        });
+        if (!res.ok) throw new Error("Failed to add");
+        showMessage("success", "Project added successfully");
+      }
       setProjectForm({ title: "", description: "", image: "", technologies: "" });
+      setEditingProjectId(null);
+      fetchData();
+    } catch (error) {
+      showMessage("error", "An error occurred");
     }
   };
 
-  const deleteProject = (id: number) => {
-    setProjects(projects.filter(project => project.id !== id));
+  const editProject = (project: Project) => {
+    setProjectForm({
+      title: project.title || "",
+      description: project.description || "",
+      image: project.image || "",
+      technologies: Array.isArray(project.technologies) ? project.technologies.join(", ") : (project.technologies || "")
+    });
+    setEditingProjectId(project.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deleteProject = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this project?")) {
+      try {
+        const res = await fetch(`/api/projects/${id}`, {
+          method: "DELETE",
+          headers: getAuthHeaders()
+        });
+        if (!res.ok) throw new Error("Failed to delete");
+        showMessage("success", "Project deleted successfully");
+        fetchData();
+      } catch (error) {
+        showMessage("error", "An error occurred");
+      }
+    }
   };
 
   // CRUD Functions for Experience
-  const addExperience = () => {
-    if (experienceForm.company && experienceForm.position) {
-      const newExperience: Experience = {
-        id: Date.now(),
-        company: experienceForm.company,
-        position: experienceForm.position,
-        duration: experienceForm.duration,
-        description: experienceForm.description
-      };
-      setExperiences([...experiences, newExperience]);
-      setExperienceForm({ company: "", position: "", duration: "", description: "" });
+  const handleExperienceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!experienceForm.company || !experienceForm.position) {
+      showMessage("error", "Please fill all required fields");
+      return;
+    }
+
+    const expPayload = {
+      ...experienceForm,
+      image: convertGoogleDriveUrl(experienceForm.image),
+    };
+
+    try {
+      if (editingExperienceId) {
+        const res = await fetch(`/api/experience/${editingExperienceId}`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(expPayload)
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        showMessage("success", "Experience updated successfully");
+      } else {
+        const res = await fetch("/api/experience", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(expPayload)
+        });
+        if (!res.ok) throw new Error("Failed to add");
+        showMessage("success", "Experience added successfully");
+      }
+      setExperienceForm({ company: "", position: "", duration: "", description: "", image: "" });
+      setEditingExperienceId(null);
+      fetchData();
+    } catch (error) {
+      showMessage("error", "An error occurred");
     }
   };
 
-  const deleteExperience = (id: number) => {
-    setExperiences(experiences.filter(experience => experience.id !== id));
+  const editExperience = (experience: Experience) => {
+    setExperienceForm({
+      company: experience.company,
+      position: experience.position,
+      duration: experience.duration,
+      description: experience.description,
+      image: experience.image || ""
+    });
+    setEditingExperienceId(experience.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deleteExperience = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this experience?")) {
+      try {
+        const res = await fetch(`/api/experience/${id}`, {
+          method: "DELETE",
+          headers: getAuthHeaders()
+        });
+        if (!res.ok) throw new Error("Failed to delete");
+        showMessage("success", "Experience deleted successfully");
+        fetchData();
+      } catch (error) {
+        showMessage("error", "An error occurred");
+      }
+    }
   };
 
   const handleLogout = () => {
-    window.location.href = "/";
+    localStorage.removeItem("authToken");
+    setLocation("/");
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-            <Button onClick={handleLogout} variant="outline">
+    <PageLayout>
+      <div className="w-full max-w-[1160px] mx-auto px-4 md:px-6">
+        <div className="py-8 md:py-16">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl md:text-5xl font-bold text-[#222a47]">
+            Admin Dashboard
+          </h1>
+            <Button 
+              onClick={handleLogout}
+              className="bg-[#e56815] hover:bg-[#d55a12] text-white"
+            >
               Logout
             </Button>
-          </div>
-        </div>
-      </header>
+            </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <Tabs defaultValue="profile" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="articles">Articles</TabsTrigger>
-            <TabsTrigger value="projects">Projects</TabsTrigger>
-            <TabsTrigger value="experience">Experience</TabsTrigger>
-            <TabsTrigger value="theme">Theme</TabsTrigger>
-          </TabsList>
+          {message.text && (
+            <Alert 
+              variant={message.type === "error" ? "destructive" : "default"} 
+              className="mb-6"
+            >
+              {message.text}
+            </Alert>
+          )}
 
-          {/* Profile Management Tab */}
-          <TabsContent value="profile" className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Basic Information */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="bg-white rounded-[12px] p-1 space-x-2">
+              <TabsTrigger value="articles" className="rounded-[8px] px-4 py-2">Articles</TabsTrigger>
+              <TabsTrigger value="projects" className="rounded-[8px] px-4 py-2">Projects</TabsTrigger>
+              <TabsTrigger value="experience" className="rounded-[8px] px-4 py-2">Experience</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="articles" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Basic Information</CardTitle>
+                  <CardTitle>Add/Edit Article</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="profile-image">Profile Image URL</Label>
-                    <Input
-                      id="profile-image"
-                      value={profileSettings.profileImage}
-                      onChange={(e) => setProfileSettings({...profileSettings, profileImage: e.target.value})}
-                      placeholder="Image URL"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CardContent>
+                  <form onSubmit={handleArticleSubmit} className="space-y-4">
                     <div>
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input
-                        id="name"
-                        value={profileSettings.name}
-                        onChange={(e) => setProfileSettings({...profileSettings, name: e.target.value})}
-                        placeholder="Your full name"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="title">Job Title</Label>
+                      <Label htmlFor="title">Title</Label>
                       <Input
                         id="title"
-                        value={profileSettings.title}
-                        onChange={(e) => setProfileSettings({...profileSettings, title: e.target.value})}
-                        placeholder="Your job title"
+                        value={articleForm.title}
+                        onChange={(e) => setArticleForm({ ...articleForm, title: e.target.value })}
+                        className="mt-1"
+                        placeholder="Article title"
                       />
                     </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="description">About Description</Label>
-                    <Textarea
-                      id="description"
-                      value={profileSettings.description}
-                      onChange={(e) => setProfileSettings({...profileSettings, description: e.target.value})}
-                      placeholder="Brief description about yourself"
-                      rows={4}
-                    />
-                  </div>
+                    <div>
+                      <Label htmlFor="content">Content</Label>
+                      <Textarea
+                        id="content"
+                        value={articleForm.content}
+                        onChange={(e) => setArticleForm({ ...articleForm, content: e.target.value })}
+                        className="mt-1"
+                        placeholder="Article content"
+                        rows={4}
+                      />
+                    </div>
+                    <Button type="submit" className="bg-[#e56815] hover:bg-[#d55a12] text-white">
+                      {editingArticleId ? "Update Article" : "Add Article"}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
 
-              {/* Contact Information */}
+              <div className="grid gap-4">
+                {articles.map(article => (
+                  <Card key={article.id}>
+                    <CardHeader>
+                      <CardTitle>{article.title}</CardTitle>
+                      <p className="text-sm text-gray-500">{article.date}</p>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="mb-4">{article.content}</p>
+                      <div className="flex space-x-2">
+                        <Button 
+                          onClick={() => editArticle(article)}
+                          variant="outline"
+                        >
+                          Edit
+                        </Button>
+                        <Button 
+                          onClick={() => deleteArticle(article.id)}
+                          variant="destructive"
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="projects" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Contact Information</CardTitle>
+                  <CardTitle>Add/Edit Project</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={profileSettings.email}
-                      onChange={(e) => setProfileSettings({...profileSettings, email: e.target.value})}
-                      placeholder="your@email.com"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      value={profileSettings.phone}
-                      onChange={(e) => setProfileSettings({...profileSettings, phone: e.target.value})}
-                      placeholder="+62 123 456 789"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="location">Location</Label>
-                    <Input
-                      id="location"
-                      value={profileSettings.location}
-                      onChange={(e) => setProfileSettings({...profileSettings, location: e.target.value})}
-                      placeholder="City, Country"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="resume">Resume/CV URL</Label>
-                    <Input
-                      id="resume"
-                      value={profileSettings.resume}
-                      onChange={(e) => setProfileSettings({...profileSettings, resume: e.target.value})}
-                      placeholder="Link to your resume"
-                    />
-                  </div>
+                <CardContent>
+                  <form onSubmit={handleProjectSubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="projectTitle">Title</Label>
+                      <Input
+                        id="projectTitle"
+                        value={projectForm.title}
+                        onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })}
+                        className="mt-1"
+                        placeholder="Project title"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="projectDescription">Description</Label>
+                      <Textarea
+                        id="projectDescription"
+                        value={projectForm.description}
+                        onChange={(e) => setProjectForm({ ...projectForm, description: e.target.value })}
+                        className="mt-1"
+                        placeholder="Project description"
+                        rows={4}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="projectImage">Image URL</Label>
+                      <Input
+                        id="projectImage"
+                        value={projectForm.image}
+                        onChange={(e) => setProjectForm({ ...projectForm, image: e.target.value })}
+                        className="mt-1"
+                        placeholder="Image URL"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="projectTechnologies">Technologies (comma-separated)</Label>
+                      <Input
+                        id="projectTechnologies"
+                        value={projectForm.technologies}
+                        onChange={(e) => setProjectForm({ ...projectForm, technologies: e.target.value })}
+                        className="mt-1"
+                        placeholder="React, TypeScript, Tailwind"
+                      />
+                    </div>
+                    <Button type="submit" className="bg-[#e56815] hover:bg-[#d55a12] text-white">
+                      {editingProjectId ? "Update Project" : "Add Project"}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
 
-              {/* Social Links */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Social Media Links</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="linkedin">LinkedIn</Label>
-                    <Input
-                      id="linkedin"
-                      value={profileSettings.socialLinks.linkedin}
-                      onChange={(e) => setProfileSettings({
-                        ...profileSettings, 
-                        socialLinks: {...profileSettings.socialLinks, linkedin: e.target.value}
-                      })}
-                      placeholder="https://linkedin.com/in/yourprofile"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="github">GitHub</Label>
-                    <Input
-                      id="github"
-                      value={profileSettings.socialLinks.github}
-                      onChange={(e) => setProfileSettings({
-                        ...profileSettings, 
-                        socialLinks: {...profileSettings.socialLinks, github: e.target.value}
-                      })}
-                      placeholder="https://github.com/yourusername"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="instagram">Instagram</Label>
-                    <Input
-                      id="instagram"
-                      value={profileSettings.socialLinks.instagram}
-                      onChange={(e) => setProfileSettings({
-                        ...profileSettings, 
-                        socialLinks: {...profileSettings.socialLinks, instagram: e.target.value}
-                      })}
-                      placeholder="https://instagram.com/yourusername"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Skills Management */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Skills Management</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="skills">Skills (comma separated)</Label>
-                    <Textarea
-                      id="skills"
-                      value={profileSettings.skills.join(', ')}
-                      onChange={(e) => setProfileSettings({
-                        ...profileSettings, 
-                        skills: e.target.value.split(',').map(skill => skill.trim()).filter(skill => skill)
-                      })}
-                      placeholder="UI Design, UX Research, Product Design"
-                      rows={3}
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {profileSettings.skills.map((skill, index) => (
-                      <span key={index} className="bg-[#e56815] text-white px-2 py-1 rounded text-sm">
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid gap-4">
+                {projects.map(project => (
+                  <Card key={project.id}>
+                    <CardHeader>
+                      <CardTitle>{project.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="mb-2">{project.description}</p>
+                      {project.image && (
+                        <img 
+                          src={convertGoogleDriveUrl(project.image)} 
+                          alt={project.title} 
+                          className="w-full h-48 object-cover rounded-lg mb-2"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {project.technologies.map((tech, index) => (
+                          <span 
+                            key={index}
+                            className="px-2 py-1 bg-[#fbebe3] text-[#e56815] rounded-full text-sm"
+                          >
+                            {tech}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button 
+                          onClick={() => editProject(project)}
+                          variant="outline"
+                        >
+                          Edit
+                        </Button>
+                        <Button 
+                          onClick={() => deleteProject(project.id)}
+                          variant="destructive"
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
             </div>
+            </TabsContent>
 
-            {/* Profile Preview */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Profile Preview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row gap-6 p-4 bg-[#fbebe3] rounded-lg">
-                  <div className="relative w-32 h-32 mx-auto md:mx-0">
-                    <div className="absolute top-0 left-0 bg-[#e56815] rounded-lg w-full h-full" />
-                    <img
-                      className="absolute top-2 left-2 w-28 h-28 object-cover rounded-lg"
-                      alt="Profile preview"
-                      src={profileSettings.profileImage}
-                      onError={(e) => {
-                        e.currentTarget.src = "/figmaAssets/whatsapp-image-2025-05-03-at-20-20-29.png";
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-[#222a47] text-xl">{profileSettings.name}</h3>
-                    <p className="text-[#e56815] font-semibold">{profileSettings.title}</p>
-                    <p className="text-[#222a47cc] mt-2 text-sm">{profileSettings.description}</p>
-                    <div className="mt-3 space-y-1 text-sm text-[#222a47]">
-                      <p>📧 {profileSettings.email}</p>
-                      <p>📱 {profileSettings.phone}</p>
-                      <p>📍 {profileSettings.location}</p>
+            <TabsContent value="experience" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Add/Edit Experience</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleExperienceSubmit} className="space-y-4">
+                    <div>
+                      <Label htmlFor="company">Company</Label>
+                      <Input
+                        id="company"
+                        value={experienceForm.company}
+                        onChange={(e) => setExperienceForm({ ...experienceForm, company: e.target.value })}
+                        className="mt-1"
+                        placeholder="Company name"
+                      />
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                    <div>
+                      <Label htmlFor="position">Position</Label>
+                      <Input
+                        id="position"
+                        value={experienceForm.position}
+                        onChange={(e) => setExperienceForm({ ...experienceForm, position: e.target.value })}
+                        className="mt-1"
+                        placeholder="Job position"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="duration">Duration</Label>
+                      <Input
+                        id="duration"
+                        value={experienceForm.duration}
+                        onChange={(e) => setExperienceForm({ ...experienceForm, duration: e.target.value })}
+                        className="mt-1"
+                        placeholder="e.g., 2023-2024"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="expDescription">Description</Label>
+                      <Textarea
+                        id="expDescription"
+                        value={experienceForm.description}
+                        onChange={(e) => setExperienceForm({ ...experienceForm, description: e.target.value })}
+                        className="mt-1"
+                        placeholder="Job description"
+                        rows={4}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="expImage">Image URL (Optional)</Label>
+                      <Input
+                        id="expImage"
+                        value={experienceForm.image}
+                        onChange={(e) => setExperienceForm({ ...experienceForm, image: e.target.value })}
+                        className="mt-1"
+                        placeholder="Image URL or Google Drive link"
+                      />
+                    </div>
+                    <Button type="submit" className="bg-[#e56815] hover:bg-[#d55a12] text-white">
+                      {editingExperienceId ? "Update Experience" : "Add Experience"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
 
-            {/* Save Button */}
-            <div className="flex justify-end">
-              <Button 
-                onClick={() => alert('Profile settings saved!')}
-                className="bg-[#e56815] hover:bg-[#d55a12]"
-              >
-                Save Profile Settings
-              </Button>
-            </div>
-          </TabsContent>
-
-          {/* Articles Tab */}
-          <TabsContent value="articles" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Manage Articles</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="article-title">Title</Label>
-                    <Input
-                      id="article-title"
-                      value={articleForm.title}
-                      onChange={(e) => setArticleForm({...articleForm, title: e.target.value})}
-                      placeholder="Article title"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="article-content">Content</Label>
-                    <Textarea
-                      id="article-content"
-                      value={articleForm.content}
-                      onChange={(e) => setArticleForm({...articleForm, content: e.target.value})}
-                      placeholder="Article content"
-                      rows={4}
-                    />
-                  </div>
-                </div>
-                <Button onClick={addArticle}>Add Article</Button>
-
-                <div className="space-y-2">
-                  {articles.map((article) => (
-                    <div key={article.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h3 className="font-semibold">{article.title}</h3>
-                        <p className="text-sm text-gray-600">{article.date}</p>
+              <div className="grid gap-4">
+                {experiences.map(experience => (
+                  <Card key={experience.id}>
+                    <CardHeader>
+                      <CardTitle>{experience.position}</CardTitle>
+                      <p className="text-[#e56815] font-medium">{experience.company}</p>
+                      <p className="text-sm text-gray-500">{experience.duration}</p>
+                    </CardHeader>
+                    <CardContent>
+                      {experience.image && (
+                        <img 
+                          src={convertGoogleDriveUrl(experience.image)} 
+                          alt={experience.company} 
+                          className="w-16 h-16 object-contain rounded mb-4 bg-white"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <p className="mb-4">{experience.description}</p>
+                      <div className="flex space-x-2">
+                        <Button 
+                          onClick={() => editExperience(experience)}
+                          variant="outline"
+                        >
+                          Edit
+                        </Button>
+                        <Button 
+                          onClick={() => deleteExperience(experience.id)}
+                          variant="destructive"
+                        >
+                          Delete
+                        </Button>
                       </div>
-                      <Button onClick={() => deleteArticle(article.id)} variant="destructive" size="sm">
-                        Delete
-                      </Button>
-                    </div>
-                  ))}
+                    </CardContent>
+                  </Card>
+                ))}
+                  </div>
+            </TabsContent>
+          </Tabs>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Projects Tab */}
-          <TabsContent value="projects" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Manage Projects</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="project-title">Title</Label>
-                    <Input
-                      id="project-title"
-                      value={projectForm.title}
-                      onChange={(e) => setProjectForm({...projectForm, title: e.target.value})}
-                      placeholder="Project title"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="project-image">Image URL</Label>
-                    <Input
-                      id="project-image"
-                      value={projectForm.image}
-                      onChange={(e) => setProjectForm({...projectForm, image: e.target.value})}
-                      placeholder="Image URL"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="project-description">Description</Label>
-                    <Textarea
-                      id="project-description"
-                      value={projectForm.description}
-                      onChange={(e) => setProjectForm({...projectForm, description: e.target.value})}
-                      placeholder="Project description"
-                      rows={3}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="project-technologies">Technologies (comma separated)</Label>
-                    <Input
-                      id="project-technologies"
-                      value={projectForm.technologies}
-                      onChange={(e) => setProjectForm({...projectForm, technologies: e.target.value})}
-                      placeholder="React, TypeScript, Node.js"
-                    />
-                  </div>
-                </div>
-                <Button onClick={addProject}>Add Project</Button>
-
-                <div className="space-y-2">
-                  {projects.map((project) => (
-                    <div key={project.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h3 className="font-semibold">{project.title}</h3>
-                        <p className="text-sm text-gray-600">{project.technologies.join(', ')}</p>
-                      </div>
-                      <Button onClick={() => deleteProject(project.id)} variant="destructive" size="sm">
-                        Delete
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Experience Tab */}
-          <TabsContent value="experience" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Manage Experience</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="experience-company">Company</Label>
-                    <Input
-                      id="experience-company"
-                      value={experienceForm.company}
-                      onChange={(e) => setExperienceForm({...experienceForm, company: e.target.value})}
-                      placeholder="Company name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="experience-position">Position</Label>
-                    <Input
-                      id="experience-position"
-                      value={experienceForm.position}
-                      onChange={(e) => setExperienceForm({...experienceForm, position: e.target.value})}
-                      placeholder="Job position"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="experience-duration">Duration</Label>
-                    <Input
-                      id="experience-duration"
-                      value={experienceForm.duration}
-                      onChange={(e) => setExperienceForm({...experienceForm, duration: e.target.value})}
-                      placeholder="2023-2024"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label htmlFor="experience-description">Description</Label>
-                    <Textarea
-                      id="experience-description"
-                      value={experienceForm.description}
-                      onChange={(e) => setExperienceForm({...experienceForm, description: e.target.value})}
-                      placeholder="Job description"
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                <Button onClick={addExperience}>Add Experience</Button>
-
-                <div className="space-y-2">
-                  {experiences.map((experience) => (
-                    <div key={experience.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h3 className="font-semibold">{experience.position} at {experience.company}</h3>
-                        <p className="text-sm text-gray-600">{experience.duration}</p>
-                      </div>
-                      <Button onClick={() => deleteExperience(experience.id)} variant="destructive" size="sm">
-                        Delete
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Theme Settings Tab */}
-          <TabsContent value="theme" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Theme Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="primary-color">Primary Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="primary-color"
-                        type="color"
-                        value={themeSettings.primaryColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, primaryColor: e.target.value})}
-                        className="w-16 h-10"
-                      />
-                      <Input
-                        value={themeSettings.primaryColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, primaryColor: e.target.value})}
-                        placeholder="#e56815"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="secondary-color">Secondary Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="secondary-color"
-                        type="color"
-                        value={themeSettings.secondaryColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, secondaryColor: e.target.value})}
-                        className="w-16 h-10"
-                      />
-                      <Input
-                        value={themeSettings.secondaryColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, secondaryColor: e.target.value})}
-                        placeholder="#222a47"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="background-color">Background Color</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="background-color"
-                        type="color"
-                        value={themeSettings.backgroundColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, backgroundColor: e.target.value})}
-                        className="w-16 h-10"
-                      />
-                      <Input
-                        value={themeSettings.backgroundColor}
-                        onChange={(e) => setThemeSettings({...themeSettings, backgroundColor: e.target.value})}
-                        placeholder="#fbebe3"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <Button onClick={() => alert('Theme settings saved!')}>
-                  Save Theme Settings
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </main>
     </div>
+    </PageLayout>
   );
-};
+}

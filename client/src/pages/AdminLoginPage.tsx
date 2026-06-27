@@ -1,113 +1,116 @@
-
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { PageLayout } from "../components/ui/layout";
 import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 
-export const AdminLoginPage = (): JSX.Element => {
+export default function AdminLoginPage() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    name: "",
-    phoneNumber: "",
+    username: "",
     password: "",
   });
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
+    const { id, value } = e.target;
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [id]: value,
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simple login validation (in real app, this would be server-side)
-    if (formData.name && formData.phoneNumber && formData.password) {
-      // Store login state (in real app, use proper auth)
-      localStorage.setItem('adminLoggedIn', 'true');
-      // Redirect to dashboard
-      window.location.href = "/admin/dashboard";
-    } else {
-      alert("Please fill in all fields");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Login failed");
+        return;
+      }
+
+      if (!data.token) {
+        setError("Login failed: token not returned");
+        return;
+      }
+
+      localStorage.setItem("authToken", data.token);
+      navigate("/admin/dashboard");
+    } catch (err) {
+      setError("Login failed. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleForgotPassword = () => {
-    // Navigate to reset password page
-    window.location.href = "/admin/reset-password";
-  };
-
   return (
-    <div className="bg-[#fbebe3] flex flex-row justify-center w-full">
-      <div className="bg-[#fbebe3] w-[1440px] h-[810px] relative">
-        {/* Login Form */}
-        <form onSubmit={handleSubmit}>
-          {/* Name Input */}
-          <div className="absolute w-[350px] h-[50px] top-[252px] left-[300px]">
-            <Input
-              name="name"
-              value={formData.name}
-              onChange={handleInputChange}
-              className="w-full h-full bg-[#d9d9d9] border-none rounded-none font-normal text-[#000000] text-base px-[42px] placeholder:text-[#00000080]"
-              placeholder="Name"
-            />
-          </div>
-
-          {/* Phone Number Input */}
-          <div className="absolute w-[350px] h-[50px] top-[326px] left-[300px]">
-            <Input
-              name="phoneNumber"
-              value={formData.phoneNumber}
-              onChange={handleInputChange}
-              className="w-full h-full bg-[#d9d9d9] border-none rounded-none font-normal text-[#000000] text-base px-[42px] placeholder:text-[#00000080]"
-              placeholder="Phone Number"
-              type="tel"
-            />
-          </div>
-
-          {/* Password Input */}
-          <div className="absolute w-[350px] h-[50px] top-[400px] left-[300px]">
-            <Input
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              className="w-full h-full bg-[#d9d9d9] border-none rounded-none font-normal text-[#000000] text-base px-[42px] placeholder:text-[#00000080]"
-              placeholder="Password"
-              type="password"
-            />
-          </div>
-
-          {/* Forgot Password Link */}
-          <button
-            type="button"
-            onClick={handleForgotPassword}
-            className="absolute top-[455px] left-[300px] font-normal text-[#e56815] text-base tracking-[0] leading-[normal] whitespace-nowrap bg-transparent border-none cursor-pointer"
-          >
-            Lupa Password?
-          </button>
-
-          {/* Login Button */}
-          <div className="absolute w-[352px] h-[50px] top-[507px] left-[300px]">
-            <Button
-              type="submit"
-              className="relative w-[350px] h-[50px] bg-[#e56815] hover:bg-[#d45a0f] border-none rounded-none font-normal text-white text-base text-center tracking-[0] leading-[normal]"
-            >
-              Login
-            </Button>
-          </div>
-        </form>
-
-        {/* Profile Image Section */}
-        <div className="absolute w-[338px] h-[463px] top-[169px] left-[802px]">
-          <div className="relative h-[463px]">
-            <div className="absolute w-[300px] h-[421px] top-0 left-[38px] bg-[#e56815] rounded-[15px]"></div>
-            <img
-              className="absolute w-[300px] h-[421px] top-[42px] left-0 object-cover"
-              alt="Admin profile"
-              src="/figmaAssets/whatsapp-image-2025-06-27-at-10-17-52.png"
-            />
+    <PageLayout>
+      <div className="w-full max-w-[1160px] mx-auto px-4 md:px-6">
+        <div className="min-h-[calc(100vh-200px)] flex items-center justify-center py-12">
+          <div className="w-full max-w-md bg-white rounded-[20px] shadow-lg p-8 md:p-10">
+            <h1 className="text-2xl md:text-3xl font-bold text-[#222a47] mb-8 text-center">
+              Admin Login
+            </h1>
+            {error && (
+              <Alert variant="destructive" className="mb-6">
+                {error}
+              </Alert>
+            )}
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium text-[#222a47] mb-2">
+                  Username
+                </label>
+                <Input
+                  id="username"
+                  type="text"
+                  value={formData.username}
+                  onChange={handleInputChange}
+                  placeholder="Enter your username"
+                  className="w-full h-[45px] md:h-[55px] px-5 rounded-[12px] border-2 border-[#e56815] focus:border-[#d55a12] focus:ring-2 focus:ring-[#e56815] bg-white transition-shadow hover:shadow-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-[#222a47] mb-2">
+                  Password
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  placeholder="Enter your password"
+                  className="w-full h-[45px] md:h-[55px] px-5 rounded-[12px] border-2 border-[#e56815] focus:border-[#d55a12] focus:ring-2 focus:ring-[#e56815] bg-white transition-shadow hover:shadow-sm"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className={`w-full h-[45px] md:h-[55px] bg-[#e56815] hover:bg-[#d55a12] text-white rounded-[12px] font-semibold transition-all hover:scale-[1.02] ${
+                  isLoading ? "opacity-70 cursor-not-allowed" : ""
+                }`}
+              >
+                {isLoading ? "Logging in..." : "Login"}
+              </button>
+            </form>
           </div>
         </div>
       </div>
-    </div>
+    </PageLayout>
   );
-};
+}
