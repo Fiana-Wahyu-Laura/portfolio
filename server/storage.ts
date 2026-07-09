@@ -10,10 +10,19 @@ import {
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
-if (!connectionString) {
+const rawConnectionString = process.env.DATABASE_URL || process.env.DATABASE_POSTGRES_URL;
+if (!rawConnectionString) {
   throw new Error("DATABASE_URL or DATABASE_POSTGRES_URL is required for database storage");
 }
+
+// Supabase PgBouncer uses self-signed certs; remove sslmode from URL entirely
+// and rely solely on the programmatic ssl config to avoid conflicts.
+const connectionString = rawConnectionString.replace(/[?&]sslmode=[^&]*/g, (match) =>
+  match.startsWith('?') ? '?' : ''
+).replace(/\?$/, '');
+
+// Ensure Node doesn't reject self-signed certs globally (fallback)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const pool = new Pool({
   connectionString,
