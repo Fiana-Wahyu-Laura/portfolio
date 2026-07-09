@@ -60,8 +60,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, message: "No file provided" });
       }
 
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+      const supabaseUrl = process.env.DATABASE_SUPABASE_URL;
+      const supabaseKey = process.env.DATABASE_SUPABASE_SERVICE_ROLE_KEY;
 
       if (!supabaseUrl || !supabaseKey) {
         return res.status(500).json({ success: false, message: "Supabase storage not configured" });
