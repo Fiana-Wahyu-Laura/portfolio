@@ -4,8 +4,12 @@ import jwt from "jsonwebtoken";
 import { Router } from "express";
 import { z } from "zod";
 import nodemailer from "nodemailer";
+import multer from "multer";
 import { storage } from "./storage";
 import { insertArticleSchema, insertProjectSchema, insertExperienceSchema } from "@shared/schema";
+
+// Multer: store in memory, max 5MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Extend Request type to include user
 interface AuthRequest extends ExpressRequest {
@@ -48,6 +52,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // use storage to perform CRUD operations on the storage interface
   // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
+
+  // Image upload endpoint (Supabase Storage)
+  app.post("/api/upload", authMiddleware, upload.single("image"), async (req: ExpressRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: "No file provided" });
+      }
+
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+
+      if (!supabaseUrl || !supabaseKey) {
+        return res.status(500).json({ success: false, message: "Supabase storage not configured" });
+      }
+
+      const ext = req.file.originalname.split('.').pop() || 'jpg';
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const bucketName = "portfolio-images";
+
+      // Upload to Supabase Storage via REST API
+      const uploadRes = await fetch(
+        `${supabaseUrl}/storage/v1/object/${bucketName}/${fileName}`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${supabaseKey}`,
+            "Content-Type": req.file.mimetype,
+            "x-upsert": "true",
+          },
+          body: req.file.buffer,
+        }
+      );
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.text();
+        console.error("Supabase upload error:", err);
+        return res.status(500).json({ success: false, message: "Upload failed" });
+      }
+
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${fileName}`;
+      res.json({ success: true, url: publicUrl });
+    } catch (error) {
+      console.error("Upload error:", error);
+      res.status(500).json({ success: false, message: "Upload failed" });
+    }
+  });
 
   // Contact form endpoint
   app.post("/api/contact", async (req: ExpressRequest, res: Response) => {

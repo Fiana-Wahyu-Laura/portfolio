@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,121 @@ interface ProfileSettings {
   skills: string[];
   resume: string;
 }
+
+// ─── Image Uploader Component ───────────────────────────────────────────────
+interface ImageUploaderProps {
+  value: string;
+  onChange: (url: string) => void;
+  label: string;
+  id: string;
+}
+
+function ImageUploader({ value, onChange, label, id }: ImageUploaderProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please select an image file.");
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    try {
+      const token = localStorage.getItem("authToken");
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        onChange(data.url);
+      } else {
+        setUploadError(data.message || "Upload failed");
+      }
+    } catch {
+      setUploadError("Upload failed. Please try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
+        onClick={() => fileRef.current?.click()}
+        className="relative flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl p-6 cursor-pointer hover:border-[#e56815] hover:bg-orange-50 transition-all group"
+      >
+        <input
+          ref={fileRef}
+          id={id}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+          }}
+        />
+        {value ? (
+          <div className="w-full space-y-3">
+            <img
+              src={value}
+              alt="Preview"
+              className="w-full max-h-48 object-contain rounded-lg"
+            />
+            <p className="text-xs text-center text-gray-400 group-hover:text-[#e56815]">
+              Click or drag to replace image
+            </p>
+          </div>
+        ) : (
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 mx-auto bg-orange-100 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-[#e56815]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-gray-600">Click to upload or drag & drop</p>
+            <p className="text-xs text-gray-400">PNG, JPG, GIF, WEBP up to 5MB</p>
+          </div>
+        )}
+        {uploading && (
+          <div className="absolute inset-0 bg-white/80 rounded-xl flex items-center justify-center">
+            <div className="flex items-center gap-2 text-[#e56815]">
+              <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              <span className="text-sm font-medium">Uploading...</span>
+            </div>
+          </div>
+        )}
+      </div>
+      {uploadError && <p className="text-sm text-red-500">{uploadError}</p>}
+      {/* URL fallback */}
+      <Input
+        placeholder="Or paste image URL directly"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 text-xs"
+      />
+    </div>
+  );
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -444,16 +559,12 @@ export default function AdminDashboard() {
                         rows={4}
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="projectImage">Image URL</Label>
-                      <Input
-                        id="projectImage"
-                        value={projectForm.image}
-                        onChange={(e) => setProjectForm({ ...projectForm, image: e.target.value })}
-                        className="mt-1"
-                        placeholder="Image URL"
-                      />
-                    </div>
+                    <ImageUploader
+                      id="projectImage"
+                      label="Project Image"
+                      value={projectForm.image}
+                      onChange={(url) => setProjectForm({ ...projectForm, image: url })}
+                    />
                     <div>
                       <Label htmlFor="projectTechnologies">Technologies (comma-separated)</Label>
                       <Input
@@ -565,16 +676,12 @@ export default function AdminDashboard() {
                         rows={4}
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="expImage">Image URL (Optional)</Label>
-                      <Input
-                        id="expImage"
-                        value={experienceForm.image}
-                        onChange={(e) => setExperienceForm({ ...experienceForm, image: e.target.value })}
-                        className="mt-1"
-                        placeholder="Image URL or Google Drive link"
-                      />
-                    </div>
+                    <ImageUploader
+                      id="expImage"
+                      label="Company Logo / Image (Optional)"
+                      value={experienceForm.image}
+                      onChange={(url) => setExperienceForm({ ...experienceForm, image: url })}
+                    />
                     <Button type="submit" className="bg-[#e56815] hover:bg-[#d55a12] text-white">
                       {editingExperienceId ? "Update Experience" : "Add Experience"}
                     </Button>
